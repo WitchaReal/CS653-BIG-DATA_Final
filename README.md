@@ -577,9 +577,9 @@ python send_temperature.py
 
 4. อัปโหลดไฟล์ `feedbacks.csv` ลงใน `raw/`
 
----
+--- 
 
-### ✅ Step 2: Glue Job แปลง CSV → JSON
+### ✅ Step 2: Glue Job  แปลง CSV → JSON
 
 1. ไปที่ AWS Glue Studio → Create job → *Visual with a source and target*
 
@@ -790,7 +790,7 @@ LIMIT 1;
 
 ---
 
-### ✅ Step 2: Glue Python Shell Job ที่ 1 → สร้าง image\_list.json
+### ✅ Step 2: Glue Job > Visual ETL > กรอกข้อมูลต่างๆในแถบ Job Details และใส่ Code ในแถบ Script > run  > Python Shell Job ที่ 1 → สร้าง image\_list.json
 
 > Job นี้อ่านชื่อไฟล์ใน S3 → สร้างไฟล์ JSON พร้อม S3 URI ของแต่ละไฟล์
 
