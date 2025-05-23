@@ -777,7 +777,7 @@ LIMIT 1;
 1. สร้าง S3 bucket ชื่อ:
 
    ```
-   studentXXXX-YYYY-ml
+   student6196-YYYY-ml
    ```
 
 2. สร้างโฟลเดอร์ `raw/`
@@ -785,7 +785,7 @@ LIMIT 1;
 3. อัปโหลดไฟล์ `1.jpg` ถึง `20.jpg` ทั้งหมดไปยัง:
 
    ```
-   s3://studentXXXX-YYYY-ml/raw/
+   s3://student6196-YYYY-ml/raw/
    ```
 
 ---
