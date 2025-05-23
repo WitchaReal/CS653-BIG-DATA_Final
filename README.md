@@ -796,32 +796,46 @@ LIMIT 1;
 
 #### 🔧 ตัวอย่างโค้ด:
 
-```python
+import sys
 import boto3
 import json
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
 
-bucket = 'student6196-YYYY-ml'
-prefix = 'raw/'
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
 
-s3_client = boto3.client('s3')
-response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+# กำหนด bucket และ prefix ที่เก็บภาพ แก้ชื่อ Bucket ตรงนี้
+bucket = "student6196-yyyy-ml"
+prefix = "raw/"
 
-images = []
-for obj in response.get('Contents', []):
-    key = obj['Key']
-    if key.endswith('.jpg'):
-        images.append({
-            'filename': key.split('/')[-1],
-            's3_uri': f's3://{bucket}/{key}'
-        })
+# ดึงรายการไฟล์ใน S3
+s3 = boto3.client('s3')
+response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
-output_data = {'images': images}
+# สร้าง JSON ที่มีทั้งชื่อและ URI
+files = [
+    {
+        "filename": obj["Key"].split("/")[-1],
+        "s3uri": f"s3://{bucket}/{obj['Key']}"
+    }
+    for obj in response.get("Contents", [])
+    if obj["Key"].endswith(".jpg")
+]
 
-s3_client.put_object(
-    Bucket=bucket,
-    Key='preprocessed/image_list.json',
-    Body=json.dumps(output_data, indent=2)
-)
+# เขียนข้อมูล JSON ลง S3 
+rdd = sc.parallelize(files)
+df = spark.read.json(rdd)
+df.write.mode("overwrite").json("s3://{bucket}/preprocessed/")
+
+job.commit()
+
 ```
 
 ---
@@ -832,52 +846,70 @@ s3_client.put_object(
 
 #### 🔧 ตัวอย่างโค้ด:
 
-```python
-import boto3
+import sys
 import json
-import urllib.parse
+import boto3
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from pyspark.sql.types import StructType, StructField, StringType, BooleanType, DoubleType
 
-bucket = 'student6196-YYYY-ml'
-rekognition = boto3.client('rekognition')
-s3 = boto3.client('s3')
+# Step 1: Glue job setup
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
 
-# ดึง image_list.json
-obj = s3.get_object(Bucket=bucket, Key='preprocessed/image_list.json')
-data = json.loads(obj['Body'].read())
-images = data['images']
+# Step 2: Load input JSON from preprocessed path แก้ชื่อ S3
+input_df = spark.read.json("s3://student6196-yyyy-ml/preprocessed/")
 
-for image in images:
-    filename = image['filename']
-    s3_uri = image['s3_uri']
-    s3_key = '/'.join(s3_uri.split('/', 4)[-1].split('/'))
+# Step 3: Define output schema explicitly
+schema = StructType([
+    StructField("filename", StringType(), True),
+    StructField("has_face", BooleanType(), True),
+    StructField("gender", StringType(), True),
+    StructField("confidence", DoubleType(), True),
+    StructField("error", StringType(), True)
+])
 
-    response = rekognition.detect_faces(
-        Image={'S3Object': {'Bucket': bucket, 'Name': s3_key}},
-        Attributes=['ALL']
-    )
-
-    if response['FaceDetails']:
-        face = response['FaceDetails'][0]
-        gender = face['Gender']['Value']
-        confidence = face['Gender']['Confidence']
-        has_face = True
-    else:
-        gender = None
-        confidence = None
-        has_face = False
-
+# Step 4: Detect faces using AWS Rekognition
+def detect_face(row):
     result = {
-        'filename': filename,
-        'has_face': has_face,
-        'gender': gender,
-        'confidence': confidence
+        "filename": row["filename"],
+        "has_face": False,
+        "gender": None,
+        "confidence": None,
+        "error": None
     }
+    try:
+        rekognition = boto3.client('rekognition')
+        response = rekognition.detect_faces(
+            Image={"S3Object": {
+                "Bucket": "student6120-3987-ml",
+                "Name": f"raw/{row['filename']}"
+            }},
+            Attributes=["ALL"]
+        )
+        if response["FaceDetails"]:
+            face = response["FaceDetails"][0]
+            result["has_face"] = True
+            result["gender"] = face["Gender"]["Value"]
+            result["confidence"] = face["Gender"]["Confidence"]
+    except Exception as e:
+        result["error"] = f"{str(e)} | file={row['filename']}"  # ✅ more traceable
 
-    s3.put_object(
-        Bucket=bucket,
-        Key=f'processed/{filename.replace(".jpg", ".json")}',
-        Body=json.dumps(result, indent=2)
-    )
+    return result
+
+# Step 5: Apply and write results to processed/ แก้ชื่อ S3
+rows_rdd = input_df.rdd.map(lambda row: detect_face(row.asDict()))
+output_df = spark.createDataFrame(rows_rdd, schema=schema)
+output_df.write.mode("overwrite").json("s3://student6196-yyyy-ml/processed/")
+
+job.commit()
+
 ```
 
 ---
